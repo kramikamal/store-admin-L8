@@ -83,11 +83,8 @@ export default {
     },
     async completeOrder(orderId) {      
       // get the order and update the status
-      let order = this.orders.find(order => order.orderId === orderId);
-      order.status = 1;
-
-      let orderObject = JSON.stringify(order)
-      console.log(orderObject);
+      const order = this.orders.find(order => order.orderId === orderId);
+      const orderObject = JSON.stringify({ ...order, status: 2 });
 
       await fetch(`${makelineServiceUrl}order`, {
         method: 'PUT',

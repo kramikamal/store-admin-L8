@@ -1,6 +1,6 @@
 <template>
   <div class="action-button">
-    <button @click="saveProduct" class="button">Save Product</button>
+    <button :disabled="isLoadingImage || isLoadingDescription" @click="saveProduct" class="button">Save Product</button>
   </div>
   <br/>
   <div v-if="showValidationErrors" class="error">
@@ -36,7 +36,7 @@
           <input type="hidden" id="product-id" placeholder="Product ID" v-model="product.id" />
         </td>
         <td>
-          <button @click="generateDescription" class="ai-button" v-show="aiCapabilities.includes('description')">Ask AI Assistant</button>
+          <button :disabled="isLoadingDescription" @click="generateDescription" class="ai-button" v-show="aiCapabilities.includes('description')">{{ isLoadingDescription ? 'Writing…' : 'Ask AI Assistant' }}</button>
         </td>
       </tr>
 
@@ -50,7 +50,7 @@
           </div>
         </td>
         <td>
-          <button id="product-image-btn" @click="generateImage" class="ai-button" v-show="aiCapabilities.includes('image')">Generate Image</button>
+          <button :disabled="isLoadingImage" id="product-image-btn" @click="generateImage" class="ai-button" v-show="aiCapabilities.includes('image')">Generate Image</button>
         </td>
       </tr>
     </table>
@@ -61,6 +61,17 @@
   const aiServiceUrl = '/ai/';
   const productServiceUrl = '/product/';
   
+  async function readResponse(response) {
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = {}; }
+    if (!response.ok) {
+      const message = data.detail || data.error;
+      throw new Error(typeof message === 'string' ? message : 'Request failed (HTTP ' + response.status + ')');
+    }
+    return data;
+  }
+
   export default {
     name: 'ProductForm',
     props: ['products'],
@@ -73,11 +84,12 @@
           image: '/placeholder.png',
           description: '',
           price: 0.00,
-          tags: []
+          tags: ''
         },
         aiCapabilities: [],
         showValidationErrors: false,
         isLoadingImage: false,
+        isLoadingDescription: false,
         overlayText: ''
       }
     },
@@ -90,12 +102,12 @@
         this.product = Object.assign({}, product);
         // add empty tags if the product doesn't have any
         if (!this.product.tags) {
-          this.product.tags = [];
+          this.product.tags = '';
         }
       }
 
       fetch(`${aiServiceUrl}health`)
-        .then(response => response.json())
+        .then(readResponse)
         .then(data => {
           if (data.status === 'ok') {
             console.log('ai service health is ok');
@@ -135,7 +147,7 @@
           return;
         }
 
-        const intervalId = this.waitForAI();
+        this.isLoadingDescription = true;
 
         let requestBody = {
           name: this.product.name,
@@ -143,7 +155,6 @@
         }
 
         console.log(requestBody);
-        this.product.description = "";
 
         fetch(`${aiServiceUrl}generate/description`, {
           method: 'POST',
@@ -152,16 +163,16 @@
           },
           body: JSON.stringify(requestBody)
         })
-          .then(response => response.json())
+          .then(readResponse)
           .then(product => {
             this.product.description = product.description
           })
           .catch(error => {
             console.log(error)
-            alert('Error occurred while generating product description')
+            alert(error.message)
           })
           .finally(() => {
-            clearInterval(intervalId);
+            this.isLoadingDescription = false;
           })
       },
       generateImage() {
@@ -188,29 +199,18 @@
           },
           body: JSON.stringify(requestBody)
         })
-          .then(response => {
-            return response.json();
-          })
+          .then(readResponse)
           .then(product => {
             this.overlayText = 'Downloading...';
-            this.product.image = '';
             this.product.image = product.image
           })
           .catch(error => {
             console.log(error)
-            alert('Error occurred while generating product image')
+            alert(error.message)
           })
           .finally(() => {
             this.isLoadingImage = false;
           })
-      },
-      waitForAI() {
-        let dots = '';
-        const intervalId = setInterval(() => {
-          dots += '.';
-          this.product.description = `Thinking${dots}`;
-        }, 500);
-        return intervalId;
       },
       saveProduct() {
         if (this.validationErrors.length > 0) {
@@ -238,7 +238,7 @@
           },
           body: JSON.stringify(this.product)
         })
-          .then(response => response.json())
+          .then(readResponse)
           .then(product => {
             alert('Product saved successfully')            
             // update or add the product to the list
@@ -252,7 +252,7 @@
           })
           .catch(error => {
             console.log(error)
-            alert('Error occurred while saving product')
+            alert(error.message)
           })
       }
     }
